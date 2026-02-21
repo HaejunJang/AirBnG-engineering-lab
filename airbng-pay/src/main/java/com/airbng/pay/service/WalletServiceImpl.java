@@ -103,24 +103,25 @@ public class WalletServiceImpl implements WalletService {
         Wallet wallet = walletRepository.findByMemberIdForUpdate(memberId)
                 .orElseThrow(() -> new WalletException(INVALID_WALLET));
 
-        BigDecimal balance = wallet.getBalanceAvailable();
         Account account = accountRepository.findForUpdate(req.getAccountId(), wallet.getWalletId())
                 .orElseThrow(() -> new AccountException(WALLET_ACCOUNT_MISMATCH));
+
+        BigDecimal balance = wallet.getBalanceAvailable();
+        BigDecimal amount = req.getAmount();
 
         if (balance.signum() <= 0) {
             throw new WalletException(INSUFFICIENT_BALANCE);
         }
-        
 
-        wallet.subtractBalanceAvailable(balance);
-        account.updateBalance(balance);
+        wallet.subtractBalanceAvailable(amount);
+        account.updateBalance(amount);
 
         WalletTx tx = WalletTx.builder()
                 .wallet(wallet)
                 .payment(null)
                 .walletTxType(WalletTxType.WITHDRAW)
                 .walletTxRole(WalletTxRole.DEBIT)
-                .amount(balance)
+                .amount(amount)
                 .walletIdemKey(idemKey)
                 .build();
         walletTxRepository.save(tx);
