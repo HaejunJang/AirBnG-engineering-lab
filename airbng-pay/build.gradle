@@ -4,6 +4,7 @@ dependencies {
     implementation project(':airbng-common')
     implementation project(':airbng-platform')
     implementation project(':airbng-api')
+    implementation "org.redisson:redisson-spring-boot-starter:4.2.0"
 }
 tasks.named('test') {
     ignoreFailures = true
