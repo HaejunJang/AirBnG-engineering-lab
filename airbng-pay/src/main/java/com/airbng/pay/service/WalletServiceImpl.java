@@ -52,7 +52,7 @@ public class WalletServiceImpl implements WalletService {
         return WalletOverviewResponse.from(wallet, accounts);
     }
 
-    @DistributedLock(key = "'wallet:' + #principal.id", waitTime = 200, leaseTime = 3000)
+    @DistributedLock(key = "'wallet:' + #principal.id", waitTime = 2000, leaseTime = 3000)
     @Transactional
     @Override
     public void topup(AirbngPrincipal principal, String idemKeyRaw, WalletTopupRequest req) {
@@ -96,7 +96,7 @@ public class WalletServiceImpl implements WalletService {
         );
     }
 
-    @DistributedLock(key = "'wallet:' + #principal.id", waitTime = 200, leaseTime = 3000)
+    @DistributedLock(key = "'wallet:' + #principal.id", waitTime = 2000, leaseTime = 3000)
     @Transactional
     @Override
     public void withdraw(AirbngPrincipal principal, String idemKeyRaw, WalletWithdrawRequest req) {

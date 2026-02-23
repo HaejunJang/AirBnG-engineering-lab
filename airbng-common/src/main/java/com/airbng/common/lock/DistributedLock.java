@@ -15,7 +15,7 @@ public @interface DistributedLock {
     TimeUnit timeUnit() default TimeUnit.MILLISECONDS;
 
     //락 획득 최대 대기
-    long waitTime() default 2000L;
+    long waitTime() default 200L;
 
     //락 점유 시간
     long leaseTime() default 3_000L;
