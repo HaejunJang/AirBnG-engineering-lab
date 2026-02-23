@@ -99,7 +99,7 @@ public enum BaseResponseStatus implements ResponseStatus {
     LOGIN_RATE_LIMIT_EXCEEDED(8003, HttpStatus.TOO_MANY_REQUESTS.value(), "로그인 시도 횟수를 초과했습니다. 잠시 후 다시 시도해주세요."),
 
     /**
-     * 9000: sesssion / token
+     * 9000: sesssion / token / lock
      */
     SESSION_MISMATCH(9001, HttpStatus.UNAUTHORIZED.value(), "세션의 사용자와 요청된 사용자 ID가 일치하지 않습니다."),
     SESSION_NOT_FOUND(9002, HttpStatus.UNAUTHORIZED.value(), "세션이 존재하지 않습니다. 다시 로그인해주세요."),
@@ -113,6 +113,7 @@ public enum BaseResponseStatus implements ResponseStatus {
     UNAUTHORIZED(9009, HttpStatus.UNAUTHORIZED.value(), "인증되지 않는 사용자입니다."),
     ACCESS_DENIED(9010, HttpStatus.FORBIDDEN.value(), "접근 권한이 없습니다."),
     INVALID_SIGNATURE(9011, HttpStatus.UNAUTHORIZED.value(), "잘못된 토큰 서명입니다."),
+    LOCK_ACQUIRE_TIMEOUT(9012, HttpStatus.TOO_MANY_REQUESTS.value(), "요청이 많아 다시 시도해주세요."),
 
 
     /**

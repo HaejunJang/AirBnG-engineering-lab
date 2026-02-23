@@ -1,5 +1,6 @@
 package com.airbng.pay.service;
 
+import com.airbng.common.lock.DistributedLock;
 import com.airbng.pay.domain.*;
 import com.airbng.pay.dto.*;
 import com.airbng.pay.exception.AccountException;
@@ -8,6 +9,7 @@ import com.airbng.pay.repository.AccountRepository;
 import com.airbng.pay.repository.WalletRepository;
 import com.airbng.pay.repository.WalletTxRepository;
 import com.airbng.platform.security.principal.AirbngPrincipal;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -31,6 +33,7 @@ public class WalletServiceImpl implements WalletService {
     private final AccountRepository accountRepository;
     private static final int PAGE_SIZE = 10;
     private static final BigDecimal MIN_TOPUP_AMOUNT = new BigDecimal("1000");
+    private final EntityManager em;
 
     @Override
     public WalletBalanceResponse getBalance(AirbngPrincipal principal) {
@@ -49,46 +52,51 @@ public class WalletServiceImpl implements WalletService {
         return WalletOverviewResponse.from(wallet, accounts);
     }
 
+    @DistributedLock(key = "'wallet:' + #principal.id", waitTime = 200, leaseTime = 3000)
     @Transactional
     @Override
     public void topup(AirbngPrincipal principal, String idemKeyRaw, WalletTopupRequest req) {
         UUID idemKey = UUID.fromString(idemKeyRaw);
 
         Optional<WalletTx> existing = walletTxRepository.findByWalletIdemKey(idemKey);
-        if (existing.isPresent()) {
-            log.info("[페이머니 충전] 이미 진행된 결과");
-            throw new WalletException(ALREADY_PROCESSED);
-        }
+        if (existing.isPresent()) {throw new WalletException(ALREADY_PROCESSED);}
+
         Long memberId = principal.getId();
-        Wallet wallet = walletRepository.findByMemberIdForUpdate(memberId)
-                .orElseThrow(() -> new WalletException(INVALID_WALLET));
 
-        Account account = accountRepository.findForUpdate(req.getAccountId(), wallet.getWalletId())
-                .orElseThrow(() -> new AccountException(WALLET_ACCOUNT_MISMATCH));
+        Long walletId = walletRepository.findWalletIdByMemberId(memberId);
+        if (walletId == null) {
+            throw new WalletException(INVALID_WALLET);
+        }
 
-        BigDecimal balance = req.getBalance();
-        if (balance.compareTo(MIN_TOPUP_AMOUNT) < 0) {
+        BigDecimal amount = req.getBalance();
+        if (amount.compareTo(MIN_TOPUP_AMOUNT) < 0) {
             throw new WalletException(INSUFFICIENT_TOPUP);
         }
 
-        if (account.getBalance().compareTo(balance) < 0) {
+        int accUpdated = accountRepository.subtractIfEnough(req.getAccountId(), walletId, amount);
+        if (accUpdated == 0) {
             throw new AccountException(INSUFFICIENT_BALANCE_ACCOUNT);
         }
 
-        account.updateBalance(balance.negate());
-        wallet.addBalanceAvailable(balance);
+        int walletUpdated = walletRepository.addAvailable(walletId, amount);
+        if (walletUpdated == 0) {
+            throw new WalletException(INVALID_WALLET);
+        }
 
-        WalletTx tx = WalletTx.builder()
-                .wallet(wallet)
+        Wallet walletRef = em.getReference(Wallet.class, walletId);
+
+        walletTxRepository.save(WalletTx.builder()
+                .wallet(walletRef)
                 .payment(null)
                 .walletTxType(WalletTxType.TOPUP)
                 .walletTxRole(WalletTxRole.CREDIT)
-                .amount(balance)
+                .amount(amount)
                 .walletIdemKey(idemKey)
-                .build();
-        walletTxRepository.save(tx);
+                .build()
+        );
     }
 
+    @DistributedLock(key = "'wallet:' + #principal.id", waitTime = 200, leaseTime = 3000)
     @Transactional
     @Override
     public void withdraw(AirbngPrincipal principal, String idemKeyRaw, WalletWithdrawRequest req) {
@@ -100,31 +108,37 @@ public class WalletServiceImpl implements WalletService {
         }
 
         Long memberId = principal.getId();
-        Wallet wallet = walletRepository.findByMemberIdForUpdate(memberId)
-                .orElseThrow(() -> new WalletException(INVALID_WALLET));
+        Long walletId = walletRepository.findWalletIdByMemberId(memberId);
+        if (walletId == null) {
+            throw new WalletException(INVALID_WALLET);
+        }
 
-        Account account = accountRepository.findForUpdate(req.getAccountId(), wallet.getWalletId())
-                .orElseThrow(() -> new AccountException(WALLET_ACCOUNT_MISMATCH));
-
-        BigDecimal balance = wallet.getBalanceAvailable();
         BigDecimal amount = req.getAmount();
+        if (amount == null || amount.signum() <= 0) {
+            throw new WalletException(INVALID_WALLET);
+        }
 
-        if (balance.signum() <= 0) {
+        int wUpdated = walletRepository.subtractAvailableIfEnough(walletId, amount);
+        if (wUpdated == 0) {
             throw new WalletException(INSUFFICIENT_BALANCE);
         }
 
-        wallet.subtractBalanceAvailable(amount);
-        account.updateBalance(amount);
+        int accUpdated = accountRepository.addBalance(req.getAccountId(), walletId, amount);
+        if (accUpdated == 0) {
+            throw new AccountException(WALLET_ACCOUNT_MISMATCH);
+        }
 
-        WalletTx tx = WalletTx.builder()
-                .wallet(wallet)
+        Wallet walletRef = em.getReference(Wallet.class, walletId);
+
+        walletTxRepository.save(WalletTx.builder()
+                .wallet(walletRef)
                 .payment(null)
                 .walletTxType(WalletTxType.WITHDRAW)
                 .walletTxRole(WalletTxRole.DEBIT)
                 .amount(amount)
                 .walletIdemKey(idemKey)
-                .build();
-        walletTxRepository.save(tx);
+                .build()
+        );
     }
 
     @Transactional(readOnly = true)
